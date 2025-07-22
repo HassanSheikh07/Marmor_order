@@ -4,6 +4,10 @@ import requests
 
 app = FastAPI()
 
+@app.get("/")
+def home():
+    return {"message": "It works on Railway!"}
+    
 WC_API_URL = "https://testingmarmorkrafts.store/wp-json/wc/v3"
 WC_CONSUMER_KEY = "ck_fb05462837d9679c0f6c8b11ccbac57d09c79638"
 WC_CONSUMER_SECRET = "cs_cd485ed45fc41da284d567e0d49cb8a272fbe4f1"
