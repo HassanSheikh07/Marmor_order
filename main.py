@@ -1,73 +1,66 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Query
+from typing import Optional
+from datetime import datetime, timezone
 import requests
-
+from fastapi.responses import JSONResponse
+ 
+ 
 app = FastAPI()
-
-@app.get("/")
-def home():
-    return {"message": "It works on Railway!"}
-    
-WC_API_URL = "https://testingmarmorkrafts.store/wp-json/wc/v3"
+ 
+# For DEv
+# WC_API_URL = "https://testingmarmorkrafts.store/wp-json/wc/v3"
+# WC_CONSUMER_KEY = "ck_fb05462837d9679c0f6c8b11ccbac57d09c79638"
+# WC_CONSUMER_SECRET = "cs_cd485ed45fc41da284d567e0d49cb8a272fbe4f1"
+ 
+# For Prod
+WC_API_URL = "https://marmorkrafts.com/wp-json/wc/v3"
 WC_CONSUMER_KEY = "ck_fb05462837d9679c0f6c8b11ccbac57d09c79638"
 WC_CONSUMER_SECRET = "cs_cd485ed45fc41da284d567e0d49cb8a272fbe4f1"
 
-@app.get("/order-status-1/{order_id}")
-def get_order_status(order_id: int, request: Request):
-    # Step 1: Check if the request includes logged-in user's email
-    user_email = request.headers.get("X-User-Email")
-    if not user_email:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Please log in to view your order status."}
-        )
+from fastapi import Query
 
-    # Step 2: Fetch order details from WooCommerce API
-    url = f"{WC_API_URL}/orders/{order_id}"
-    response = requests.get(url, auth=(WC_CONSUMER_KEY, WC_CONSUMER_SECRET))
+@app.get("/blogs")
+def get_blogs(keyword: str = Query(default=None, description="Search keyword for blog")):
+    base_url = WC_API_URL.replace('/wc/v3', '')
+    url = f"{base_url}/wp/v2/posts?per_page=5&_embed"
+
+    # If a keyword is provided, add it to the search query
+    if keyword:
+        url += f"&search={keyword}"
+
+    response = requests.get(url)
 
     if response.status_code != 200:
         return JSONResponse(
             status_code=response.status_code,
-            content={"error": "Failed to fetch order details"}
+            content={"error": "Failed to fetch blog posts"}
         )
 
-    order_data = response.json()
+    posts = response.json()
 
-    # Step 3: Check if the order belongs to the logged-in user
-    order_email = order_data.get("billing", {}).get("email", "")
-    if order_email.lower() != user_email.lower():
-        return JSONResponse(
-            status_code=403,
-            content={"error": "You are not authorized to access this order."}
-        )
-
-    # Step 4: Extract tracking number if available
-    tracking_number = "Not available"
-    for meta_item in order_data.get("meta_data", []):
-        if meta_item.get("key") == "_wc_shipment_tracking_items":
-            tracking_items = meta_item.get("value", [])
-            if tracking_items:
-                tracking_number = tracking_items[0].get("tracking_number", "Not available")
-            break
-
-    # Step 5: Return safe and filtered order info
-    formatted_response = {
+    formatted = {
         "@context": "https://schema.org",
-        "@type": "Order",
-        "order_number": order_data["number"],
-        "status": order_data["status"],
-        "currency": order_data["currency"],
-        "total": order_data["total"],
-        "shipping_method": order_data["shipping_lines"][0]["method_title"] if order_data.get("shipping_lines") else "N/A",
-        "billing_address": order_data["billing"],
-        "shipping_address": order_data["shipping"],
-        "tracking_number": tracking_number,
-        "order_date": order_data["date_created"],
-        "line_items": [
-            {"name": item["name"], "quantity": item["quantity"], "price": item["price"]}
-            for item in order_data["line_items"]
-        ],
+        "@type": "Collection",
+        "name": "Blog Posts",
+        "members": []
     }
 
-    return JSONResponse(content=formatted_response)
+    for post in posts:
+        formatted["members"].append({
+            "@type": "BlogPosting",
+            "headline": post.get("title", {}).get("rendered", ""),
+            "url": post.get("link"),
+            "datePublished": post.get("date"),
+            "author": {
+                "@type": "Person",
+                "name": post.get("_embedded", {}).get("author", [{}])[0].get("name", "Unknown")
+            },
+            "image": {
+                "@type": "ImageObject",
+                "url": post.get("_embedded", {}).get("wp:featuredmedia", [{}])[0].get("source_url", "")
+            },
+            "description": post.get("excerpt", {}).get("rendered", "")
+        })
+
+    return JSONResponse(content=formatted)
+
